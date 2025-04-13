@@ -3,3 +3,6 @@ pandas
 seaborn
 matplotlib
 scikit-learn
+openpyxl
+PyPDF2
+python-docx
