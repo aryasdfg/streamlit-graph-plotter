@@ -1,7 +1,7 @@
 streamlit
 pandas
-seaborn
 matplotlib
+seaborn
 scikit-learn
 openpyxl
 PyPDF2
