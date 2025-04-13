@@ -5,98 +5,86 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
-from io import BytesIO
 
-st.set_page_config(layout="wide")
-st.title("📊 Advanced Research Graph Plotter")
+st.set_page_config(layout="wide", page_title="Smart Graph Plotter")
 
-uploaded_file = st.file_uploader("📁 Upload your CSV file", type=["csv"])
+st.title("📊 Smart Data Visualizer & Graph Plotter")
+
+# Layout: 2 columns
+left, right = st.columns([2, 3])
+
+with left:
+    uploaded_file = st.file_uploader("📁 Upload your data file (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("📄 Data Preview:")
-    st.dataframe(df.head())
-
-    numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
-    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
-
-    if len(numeric_cols) < 2:
-        st.error("❌ At least two numeric columns are required.")
+    # Read file
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
     else:
-        st.sidebar.header("🔧 Plot Configuration")
+        df = pd.read_excel(uploaded_file)
 
-        x_col = st.sidebar.selectbox("X-axis", numeric_cols)
-        y_cols = st.sidebar.multiselect("Y-axis (you can select multiple)", [col for col in numeric_cols if col != x_col], default=[numeric_cols[1]])
+    numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
+    category_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    all_cols = df.columns.tolist()
 
-        hue_col = None
-        if categorical_cols:
-            hue_col = st.sidebar.selectbox("Group by (optional)", ["None"] + categorical_cols)
-            if hue_col == "None":
-                hue_col = None
+    with right:
+        st.subheader("📄 Data Preview")
+        st.dataframe(df, use_container_width=True)
 
-        st.sidebar.header("🎨 Style & Curve Fitting")
-        style = st.sidebar.selectbox("Seaborn Style", ["whitegrid", "darkgrid", "white", "dark", "ticks"])
-        marker = st.sidebar.selectbox("Marker Style", ['o', 's', '^', 'D', '*', '+', 'x'], index=0)
-        palette = st.sidebar.selectbox("Color Palette", ["deep", "muted", "bright", "dark", "colorblind"])
-        dark_mode = st.sidebar.checkbox("🌙 Enable Dark Mode", value=False)
-        smooth = st.sidebar.checkbox("🧮 Apply Curve Fit", value=False)
-        degree = st.sidebar.slider("Polynomial Degree (for Curve Fit)", 1, 5, 2)
+    with left:
+        st.subheader("🔍 Auto Axis Suggestion")
+        
+        suggested_x = df[numeric_cols].nunique().idxmax() if numeric_cols else None
+        suggested_y = df[numeric_cols].var().idxmax() if numeric_cols else None
 
-        title = st.sidebar.text_input("Plot Title", "Research Plot")
-        xlabel = st.sidebar.text_input("X-axis Label", x_col)
-        ylabel = st.sidebar.text_input("Y-axis Label", ", ".join(y_cols))
+        st.markdown(f"**📌 Suggested X-axis:** `{suggested_x}`")
+        st.markdown(f"**📌 Suggested Y-axis:** `{suggested_y}`")
 
-        sns.set_theme(style=style, palette=palette)
+        x_col = st.selectbox("Select X-axis", options=numeric_cols, index=numeric_cols.index(suggested_x) if suggested_x else 0)
+        y_col = st.selectbox("Select Y-axis", options=[col for col in numeric_cols if col != x_col], index=numeric_cols.index(suggested_y) if suggested_y and suggested_y != x_col else 0)
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-        if dark_mode:
-            plt.style.use("dark_background")
+        hue_col = st.selectbox("Optional: Group lines by", options=["None"] + category_cols)
+        hue_col = None if hue_col == "None" else hue_col
 
-        for y_col in y_cols:
+        smooth = st.checkbox("🧮 Apply Curve Fitting", value=True)
+        degree = st.slider("Polynomial Degree (if fitting applied)", 1, 5, 2)
+        dark = st.checkbox("🌙 Dark Mode")
+
+        title = st.text_input("Plot Title", f"{y_col} vs {x_col}")
+        xlabel = st.text_input("X-axis Label", x_col)
+        ylabel = st.text_input("Y-axis Label", y_col)
+
+        if st.button("📈 Generate Plot"):
+            sns.set_style("darkgrid" if dark else "whitegrid")
+            fig, ax = plt.subplots(figsize=(10, 6))
             if hue_col:
                 for group in df[hue_col].unique():
-                    sub_data = df[df[hue_col] == group]
-                    sns.lineplot(data=sub_data, x=x_col, y=y_col, label=f"{y_col} - {group}", marker=marker, ax=ax)
-
+                    sub = df[df[hue_col] == group]
+                    sns.lineplot(data=sub, x=x_col, y=y_col, label=str(group), ax=ax, marker="o")
                     if smooth:
-                        X = sub_data[[x_col]].values
-                        y = sub_data[y_col].values
+                        X = sub[[x_col]].values
+                        y = sub[y_col].values
                         poly = PolynomialFeatures(degree=degree)
                         X_poly = poly.fit_transform(X)
                         model = LinearRegression().fit(X_poly, y)
-                        X_fit = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
-                        y_fit = model.predict(poly.transform(X_fit))
-                        ax.plot(X_fit, y_fit, linestyle='--', label=f"{y_col} - {group} (fit)")
+                        x_fit = np.linspace(X.min(), X.max(), 200).reshape(-1, 1)
+                        y_fit = model.predict(poly.transform(x_fit))
+                        ax.plot(x_fit, y_fit, linestyle="--", label=f"{group} (fit)")
             else:
-                sns.lineplot(data=df, x=x_col, y=y_col, label=y_col, marker=marker, ax=ax)
-
+                sns.lineplot(data=df, x=x_col, y=y_col, ax=ax, marker="o", label=f"{y_col}")
                 if smooth:
                     X = df[[x_col]].values
                     y = df[y_col].values
                     poly = PolynomialFeatures(degree=degree)
                     X_poly = poly.fit_transform(X)
                     model = LinearRegression().fit(X_poly, y)
-                    X_fit = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
-                    y_fit = model.predict(poly.transform(X_fit))
-                    ax.plot(X_fit, y_fit, linestyle='--', label=f"{y_col} (fit)")
+                    x_fit = np.linspace(X.min(), X.max(), 200).reshape(-1, 1)
+                    y_fit = model.predict(poly.transform(x_fit))
+                    ax.plot(x_fit, y_fit, linestyle="--", label="Fit")
 
-        ax.set_title(title, fontsize=16)
-        ax.set_xlabel(xlabel, fontsize=14)
-        ax.set_ylabel(ylabel, fontsize=14)
-        ax.grid(True)
-        ax.legend()
-        sns.despine()
-
-        st.pyplot(fig)
-
-        # Export Options
-        st.subheader("📤 Export Plot")
-        img_buf = BytesIO()
-        fig.savefig(img_buf, format="png", dpi=300)
-        st.download_button("📷 Download PNG", img_buf.getvalue(), file_name="plot.png", mime="image/png")
-
-        pdf_buf = BytesIO()
-        fig.savefig(pdf_buf, format="pdf", dpi=300)
-        st.download_button("📄 Download PDF", pdf_buf.getvalue(), file_name="plot.pdf", mime="application/pdf")
-
-        st.success("✅ Graph is ready for thesis or publication!")
+            ax.set_title(title, fontsize=16)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.grid(True)
+            ax.legend()
+            st.pyplot(fig)
